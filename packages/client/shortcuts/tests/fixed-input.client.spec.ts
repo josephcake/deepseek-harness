@@ -22,7 +22,7 @@ function mount() {
   const input = document.createElement('input')
   document.body.append(input)
   input.focus()
-  dispose = installKeyboard(window, { dispatch, runtime: 'web', platform: 'windows' }, fixed)
+  dispose = installKeyboard(window, { dispatch, runtime: 'web', platform: 'windows', release: vi.fn(), releaseAll: vi.fn() }, fixed)
   return { input, dispatch, fixed }
 }
 

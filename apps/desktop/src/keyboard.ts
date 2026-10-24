@@ -161,6 +161,10 @@ export function installDesktopShortcuts(
         if (input.type === 'keyUp') {
           // A chord's first key reached the renderer, so its release must reach the same input handlers.
           if (consumed.get(input.code) === 'press') event.preventDefault()
+          if (consumed.has(input.code)) {
+            window.webContents.send(DESKTOP_IPC.shortcutsInput, { kind: 'keyboard', revision, frameName: '', up: true,
+              code: input.code, control: input.control, alt: input.alt, shift: input.shift, meta: input.meta, repeat: false })
+          }
           consumed.delete(input.code)
           held.delete(input.code)
           if (modifierKey) held.clear()

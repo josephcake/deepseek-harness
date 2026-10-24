@@ -65,6 +65,28 @@ it('rejects a native window close outside Desktop', async () => {
   await expect(service.closeWindow()).rejects.toThrow('Desktop keyboard bridge unavailable')
 })
 
+it('delegates physical key release and focus loss to held commands', async () => {
+  vi.spyOn(navigator, 'platform', 'get').mockReturnValue('Linux x86_64')
+  const { service } = mount()
+  const release = vi.fn()
+  const off = service.register({ ...command, id: 'hold.command' as ShortcutCommandId,
+    defaults: { 'web:linux': { code: 'Slash', modifiers: ['primary'] } },
+    resolve: () => ({ status: 'handled', run() {}, release }) })
+  await vi.waitFor(() => { expect(service.config.getSnapshot().status).toBe('ready') })
+  service.release('Slash')
+  service.releaseAll()
+  const press = (): void => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Slash', key: '/', ctrlKey: true, bubbles: true, cancelable: true }))
+  }
+  press()
+  window.dispatchEvent(new KeyboardEvent('keyup', { code: 'Slash', key: '/' }))
+  expect(release).toHaveBeenCalledOnce()
+  press()
+  window.dispatchEvent(new Event('blur'))
+  expect(release).toHaveBeenCalledTimes(2)
+  off()
+})
+
 it('describes registered binding conflicts on Linux Desktop', async () => {
   desktop()
   document.documentElement.dataset.platform = 'linux'

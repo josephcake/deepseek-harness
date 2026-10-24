@@ -15,6 +15,8 @@ import type { ShortcutRegistry } from './registry.ts'
 export function installNativeKeyboard(window: Window, keyboard: DesktopKeyboardApi, registry: ShortcutRegistry,
   snapshot: () => ShortcutConfigSnapshot, reset?: () => void): () => void {
   return keyboard.subscribe((input) => {
+    // A release settles the action started by an earlier accepted configuration.
+    if (input.kind !== 'menu' && input.up) { registry.release(input.code); return }
     if (input.revision !== snapshot().revision) return
     reset?.()
     let target = window.document.activeElement

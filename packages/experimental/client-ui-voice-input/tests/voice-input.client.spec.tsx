@@ -11,6 +11,8 @@ import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import { VoiceInput, type VoiceInputProps } from '../src/client/VoiceInput.tsx'
 import { RecordingError, Recording } from '../src/client/audio.ts'
 import type { SpeechReadiness } from '../src/client/readiness.ts'
+import type { VoiceActuator } from '../src/client/activation.ts'
+import type { ShortcutCatalogEntry, ShortcutCommandId } from '@deepseek-ai/dsh-client-shortcuts/client'
 import { zh } from '../src/client/locales.ts'
 import { captureFixture } from './audio-fixture.client.ts'
 
@@ -31,14 +33,19 @@ function fixture(recording?: Recording, navigable = true) {
   } })
   const transcribe = vi.fn<(request: unknown, signal: AbortSignal) => Promise<RemoteResult<Transcript>>>(
     async () => ({ ok: true, value: transcript }))
+  const registerActuator = vi.fn<(actuator: VoiceActuator) => () => void>(() => () => {})
+  const shortcuts = createSnapshotStore<readonly ShortcutCatalogEntry[]>([])
   const props: VoiceInputProps = { sessionId: 'one' as SessionId, inputActions, transcribe, locked: false, onActiveChange: vi.fn(),
     openSettings: vi.fn(), prepare: vi.fn(async () => {}), cancelPreparation: vi.fn(async () => {}), configure: vi.fn(async () => {}),
     selectMicrophone: vi.fn(), useMicrophoneDevice: bindSnapshotSelector(createSnapshotStore({ id: '', label: '' })),
     useSpeechReadiness: bindSnapshotSelector(readiness), createRecording: () => recording ?? capture,
     usePluginNavigation: bindSnapshotSelector(createSnapshotStore(navigable)),
+    registerActuator, selectActivation: vi.fn(),
+    useVoiceActivation: bindSnapshotSelector(createSnapshotStore({ mode: 'toggle' as const })),
+    useShortcuts: bindSnapshotSelector(shortcuts),
     t: makeTranslate(zh, commonZh) }
   const view = render(<VoiceInput {...props} />)
-  return { props, capture, inputActions, readiness, transcribe, view }
+  return { props, capture, inputActions, readiness, transcribe, view, registerActuator, shortcuts }
 }
 async function start(): Promise<void> {
   fireEvent.click(screen.getByRole('button', { name: zh.start }))
@@ -395,4 +402,45 @@ it.each(['later', 'escape', 'ready', 'session'])('dismisses unavailable recognit
     open()
     expect(screen.getByRole('dialog')).toBeTruthy()
   }
+})
+
+it('starts and stops a recording from the dictation actuator', async () => {
+  const b = fixture()
+  const actuator = b.registerActuator.mock.calls[0]![0]
+  act(() => { actuator.stop() })
+  expect(actuator.canStart()).toBe(true)
+  act(() => { actuator.start() })
+  await screen.findByRole('button', { name: zh.stop })
+  expect(actuator.isActive()).toBe(true)
+  expect(actuator.canStart()).toBe(false)
+  act(() => { actuator.stop() })
+  act(() => { actuator.stop() })
+  await waitFor(() => { expect(b.inputActions.insertText).toHaveBeenCalledWith(transcript.text, { start: 3, end: 3, draftRev: 1 }) })
+  expect(actuator.isActive()).toBe(false)
+})
+
+it('shows the edited shortcut in the microphone tooltip', async () => {
+  const b = fixture()
+  act(() => { b.shortcuts.set([{ id: 'voice.dictate' as ShortcutCommandId, label: 'Dictate', aliases: [], keys: ['⌥', '⌘', 'V'],
+    aria: 'Alt+Meta+V', binding: null, modified: false, conflicts: [], issue: null }]) })
+  fireEvent.pointerEnter(screen.getByRole('button', { name: zh.start }).parentElement!)
+  expect((await screen.findByRole('tooltip')).textContent).toContain('⌥')
+})
+
+it('stops a capture that the shortcut released before permission settled', async () => {
+  const b = fixture(), permission = Promise.withResolvers<undefined>()
+  b.capture.start.mockReturnValueOnce(permission.promise)
+  const actuator = b.registerActuator.mock.calls[0]![0]
+  act(() => { actuator.start() })
+  expect(screen.getByRole('status').textContent).toBe(zh.requesting)
+  act(() => { actuator.stop() })
+  await act(async () => { permission.resolve(undefined); await permission.promise })
+  await waitFor(() => { expect(b.inputActions.insertText).toHaveBeenCalledWith(transcript.text, { start: 3, end: 3, draftRev: 1 }) })
+})
+
+it('reports the actuator as unavailable while the composer is locked', () => {
+  const b = fixture()
+  const actuator = b.registerActuator.mock.calls[0]![0]
+  b.view.rerender(<VoiceInput {...b.props} locked />)
+  expect(actuator.canStart()).toBe(false)
 })

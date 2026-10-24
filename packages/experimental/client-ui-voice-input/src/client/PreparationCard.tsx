@@ -4,6 +4,7 @@ import { Button, DisclosureRow, IconChevronDownOutlineRegular, StateDot, type St
 import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SpeechPreparationState, SpeechProviderId, SpeechProviderView, SpeechSelectionPatch } from '@deepseek-ai/dsh-experimental-speech-to-text/types'
 import type { VoiceInputInjected } from './VoiceInput.tsx'
+import type { VoiceActivationMode } from './activation.ts'
 import { MicrophonePicker } from './MicrophonePicker.tsx'
 import { NS } from './locales.ts'
 import css from './VoiceInput.module.css'
@@ -129,9 +130,11 @@ export function PreparationCard({ provider, connected, prepare, cancelPreparatio
 }
 
 /** Recognition preferences and preparation cards shared by plugin details and Settings. */
-export function VoicePreparation({ useSpeechReadiness, ...props }: Pick<InjectFace<VoiceInputInjected>,
-  'useSpeechReadiness' | 'configure' | 'prepare' | 'cancelPreparation' | 'createRecording' | 'useMicrophoneDevice' | 'selectMicrophone'> & PropsLocale<typeof NS>) {
+export function VoicePreparation({ useSpeechReadiness, useVoiceActivation, useShortcuts, ...props }: Pick<InjectFace<VoiceInputInjected>,
+  'useSpeechReadiness' | 'useVoiceActivation' | 'useShortcuts' | 'configure' | 'selectActivation' | 'prepare' | 'cancelPreparation' | 'createRecording' | 'useMicrophoneDevice' | 'selectMicrophone'> & PropsLocale<typeof NS>) {
   const readiness = useSpeechReadiness(value => value), catalog = readiness.catalog
+  const mode = useVoiceActivation(value => value.mode)
+  const shortcut = useShortcuts(rows => rows.find(row => row.id === 'voice.dictate'))
   const [saving, setSaving] = useState(false), [error, setError] = useState('')
   const configure = async (patch: SpeechSelectionPatch): Promise<void> => {
     setSaving(true); setError('')
@@ -154,6 +157,14 @@ export function VoicePreparation({ useSpeechReadiness, ...props }: Pick<InjectFa
         {selected?.languages.map(language =>
           <option key={language} value={language}>{languageNames[language] ?? language}</option>)}
       </select></label>
+      <label>{props.t('activation')}<select value={mode}
+        onChange={(event) => { props.selectActivation(event.target.value as VoiceActivationMode) }}>
+        <option value="toggle">{props.t('activationToggle')}</option>
+        <option value="hold">{props.t('activationHold')}</option>
+      </select></label>
+      <small className={css.metric}>{shortcut && shortcut.keys.length > 0
+        ? props.t('shortcutKeys', { keys: shortcut.keys.join(' ') }) : props.t('shortcutUnbound')}</small>
+      <small className={css.metric}>{props.t('activationHelp')}</small>
       <p>{props.t(selected?.location === 'cloud' ? 'cloud' : 'local')}</p>
       {error && <p role="alert">{props.t('failed', { message: error })}</p>}
     </div>}

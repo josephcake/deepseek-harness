@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-10-24-dictation-shortcut-hold-release.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-24-dictation-shortcut-hold-release.md
+/agent-note-dictation-shortcuts-end-on-key-release:
+  en: fd3fb88cdb4bbcd4
+  zh: 78ce79f3caf7ce78
+/agent-note-dictation-shortcuts-end-on-key-release/problem:
+  en: 902e6891529f8e28
+  zh: fbf06fe11c47cf36
+/agent-note-dictation-shortcuts-end-on-key-release/decision:
+  en: 4ee80263b6217595
+  zh: 6997847621150e5d
+/agent-note-dictation-shortcuts-end-on-key-release/alternatives-considered:
+  en: 6c16d2405dbf0d08
+  zh: 2bd5060b42fbc7c4
+/agent-note-dictation-shortcuts-end-on-key-release/consequences:
+  en: 42f887f3ca2d4695
+  zh: e28e1ea07a35389a

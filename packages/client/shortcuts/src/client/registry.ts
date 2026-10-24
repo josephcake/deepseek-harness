@@ -1,7 +1,7 @@
 /** Command registration, normalized default bindings, and synchronous dispatch. */
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { bindingIssue, bindingKey, effectiveShortcuts, initialShortcutConfig, isWebBindingAllowed, normalizeBinding, overlappingBindings, presentBinding, resolveShortcutDefault } from '../protocol.ts'
-import type { ShortcutCommandId, ShortcutConfigSnapshot, ShortcutDefinition, ShortcutPlatform, ShortcutRuntime } from '../protocol.ts'
+import type { ShortcutCommandId, NormalizedBinding, ShortcutConfigSnapshot, ShortcutDefinition, ShortcutPlatform, ShortcutRuntime } from '../protocol.ts'
 import type { ShortcutCatalogEntry, ShortcutCommand, ShortcutContext, ShortcutGesture,
   ShortcutFixedCommand, ShortcutFixedCatalogEntry } from './types.ts'
 
@@ -16,6 +16,9 @@ export class ShortcutRegistry {
   private readonly fixedCommands = new Map<ShortcutCommandId, ShortcutFixedCommand>()
   private readonly conflicts = new Map<string, ShortcutCommand>()
   private readonly bindings = new Map<string, ShortcutCommand>()
+  private readonly bindingValues = new Map<string, NormalizedBinding>()
+  /** Resolved actions awaiting a physical-key release. */
+  private readonly held: Array<{ commandId: ShortcutCommandId; codes: string[]; release(): void }> = []
   private readonly state
   /** Effective localized rows derived from the accepted configuration. */
   readonly catalog
@@ -104,6 +107,8 @@ export class ShortcutRegistry {
     this.refreshLabels()
     return () => {
       if (this.commands.get(command.id) !== command) return
+      // The owner's teardown settles any action still holding a key.
+      this.dropHeld(command.id, false)
       this.commands.delete(command.id)
       this.refreshLabels()
     }
@@ -115,12 +120,16 @@ export class ShortcutRegistry {
    */
   refreshLabels(config: ShortcutConfigSnapshot = this.config.getSnapshot()): void {
     this.bindings.clear()
+    this.bindingValues.clear()
     this.conflicts.clear()
     const rows = effectiveShortcuts(this.definitions(), config.document, this.runtime, this.platform)
     const catalog = rows.map((row) => {
       const command = this.commands.get(row.id) as ShortcutCommand
       const enabled = config.status !== 'loading' && row.issue === null && row.conflicts.length === 0
-      if (enabled && row.binding !== null) this.bindings.set(bindingKey(row.binding), command)
+      if (enabled && row.binding !== null) {
+        this.bindings.set(bindingKey(row.binding), command)
+        this.bindingValues.set(bindingKey(row.binding), row.binding)
+      }
       if (config.status !== 'loading' && row.issue === null && row.conflicts.length > 0 && row.binding !== null) {
         this.conflicts.set(bindingKey(row.binding), command)
       }
@@ -142,6 +151,36 @@ export class ShortcutRegistry {
     if (command === undefined || (context.modal !== null && !command.modals.includes(context.modal))) return
     const result = command.resolve({ ...context, source: 'menu' })
     if (result.status === 'handled') result.run()
+  }
+
+  /**
+   * End the command whose activating key was released; a chord ends when its last key is released.
+   * @param code - physical key code reported by the keyboard adapter.
+   */
+  release(code: string): void {
+    if (this.held.length === 0) return
+    for (const entry of [...this.held].reverse()) {
+      const position = entry.codes.indexOf(code)
+      if (position < 0) continue
+      entry.codes.splice(position, 1)
+      if (entry.codes.length > 0) continue
+      this.held.splice(this.held.indexOf(entry), 1)
+      entry.release()
+    }
+  }
+
+  /** End every held command after focus loss, page hiding, or configuration reset. */
+  releaseAll(): void {
+    this.dropHeld()
+  }
+
+  private dropHeld(commandId?: ShortcutCommandId, notify = true): void {
+    if (this.held.length === 0) return
+    for (const entry of [...this.held].reverse()) {
+      if (commandId !== undefined && entry.commandId !== commandId) continue
+      this.held.splice(this.held.indexOf(entry), 1)
+      if (notify) entry.release()
+    }
   }
 
   /**
@@ -174,7 +213,17 @@ export class ShortcutRegistry {
     if (resolution.status === 'pass') return resolution
     consume()
     if (resolution.status === 'blocked') return { ...resolution, commandId: command.id }
-    if (!gesture.repeat) resolution.run()
+    if (!gesture.repeat) {
+      const binding = this.bindingValues.get(key)
+      const release = resolution.release
+      if (release !== undefined && binding !== undefined) this.dropHeld(command.id)
+      resolution.run()
+      if (release !== undefined && binding !== undefined) {
+        this.held.push({ commandId: command.id,
+          codes: binding.secondCode === undefined ? [binding.code] : [binding.code, binding.secondCode],
+          release: () => { release() } })
+      }
+    }
     return { status: 'handled', commandId: command.id }
   }
 }

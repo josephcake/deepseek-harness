@@ -105,6 +105,14 @@ export default class ShortcutsService extends Service implements Shortcuts {
     }
   }
 
+  release(code: string): void {
+    this.registry.release(code)
+  }
+
+  releaseAll(): void {
+    this.registry.releaseAll()
+  }
+
   describeBinding(binding: Parameters<Shortcuts['describeBinding']>[0]): ReturnType<Shortcuts['describeBinding']> {
     const normalized = binding === null ? null : normalizeBinding(binding, this.platform)
     return { binding: normalized,

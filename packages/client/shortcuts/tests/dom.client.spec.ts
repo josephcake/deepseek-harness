@@ -209,3 +209,25 @@ it('passes the original input element to a feature target resolver', () => {
   press(window)
   expect(dispatch).toHaveBeenLastCalledWith(expect.anything(), { region: 'page', modal: null, target: document.body }, expect.any(Function))
 })
+
+it('ends held commands on key release, focus loss, and page hiding', () => {
+  const registry = new ShortcutRegistry('web', 'windows')
+  const release = vi.fn()
+  registry.register({ id: 'hold.command' as ShortcutCommandId, label: () => 'Hold', aliases: [],
+    defaults: { 'web:windows': { code: 'KeyM', modifiers: ['control', 'alt'] } },
+    regions: ['page', 'editable'], modals: [], resolve: () => ({ status: 'handled', run: () => {}, release }) })
+  dispose = installKeyboard(window, registry)
+  const input = document.createElement('input'); document.body.append(input); input.focus()
+  press(input, { code: 'KeyM', key: 'm', ctrlKey: true, altKey: true })
+  window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyM', key: 'm' }))
+  expect(release).toHaveBeenCalledOnce()
+  press(input, { code: 'KeyM', key: 'm', ctrlKey: true, altKey: true })
+  fireEvent.blur(window)
+  expect(release).toHaveBeenCalledTimes(2)
+  fireEvent(document, new Event('visibilitychange'))
+  expect(release).toHaveBeenCalledTimes(2)
+  press(input, { code: 'KeyM', key: 'm', ctrlKey: true, altKey: true })
+  Object.defineProperty(document, 'hidden', { configurable: true, value: true })
+  try { fireEvent(document, new Event('visibilitychange')) } finally { delete (document as { hidden?: boolean }).hidden }
+  expect(release).toHaveBeenCalledTimes(3)
+})

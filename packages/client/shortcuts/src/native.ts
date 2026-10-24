@@ -14,7 +14,9 @@ export type DesktopShortcutInput = {
     readonly alt: boolean
     readonly shift: boolean
     readonly meta: boolean
-    readonly repeat: boolean })
+    readonly repeat: boolean
+    /** True when the key that started a held command is released; frame verification is skipped. */
+    readonly up?: boolean })
 
 /** Window-scoped capabilities exposed only to the product main frame. */
 export interface DesktopKeyboardApi {

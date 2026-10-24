@@ -212,3 +212,77 @@ it.each(['macos', 'windows'] as const)('keeps %s priority identical before savin
   }
   expect(run).toHaveBeenCalledTimes(18)
 })
+
+it('ends a held command on its key release and ignores repeats and unknown keys', () => {
+  const registry = new ShortcutRegistry('desktop', 'macos')
+  const run = vi.fn(), release = vi.fn()
+  registry.register(command({ defaults: { 'desktop:macos': { code: 'KeyM', modifiers: ['primary', 'alt'] } },
+    resolve: () => ({ status: 'handled', run, release }) }))
+  const input = { ...gesture, code: 'KeyM', alt: true }
+  expect(registry.dispatch(input, context, vi.fn()).status).toBe('handled')
+  expect(registry.dispatch({ ...input, repeat: true }, context, vi.fn()).status).toBe('handled')
+  expect(run).toHaveBeenCalledOnce()
+  expect(registry.dispatch(input, context, vi.fn()).status).toBe('handled')
+  expect(run).toHaveBeenCalledTimes(2)
+  // A fresh press closes the hold it replaces before starting the next one.
+  expect(release).toHaveBeenCalledOnce()
+  registry.release('KeyJ')
+  expect(release).toHaveBeenCalledOnce()
+  registry.release('KeyM')
+  expect(release).toHaveBeenCalledTimes(2)
+  registry.release('KeyM')
+  expect(release).toHaveBeenCalledTimes(2)
+})
+
+it('waits for the last chord key, ends held work on disposal, and releases everything on request', () => {
+  const registry = new ShortcutRegistry('desktop', 'macos')
+  const discharge = vi.fn()
+  const off = registry.register(command({ defaults: {},
+    resolve: () => ({ status: 'handled', run: () => {}, release: discharge }) }))
+  registry.configure({ ...registry.config.getSnapshot(), revision: 'chord' as never,
+    document: { schemaVersion: 2, profiles: { 'desktop:macos': {
+      'test.toggle': { code: 'KeyA', secondCode: 'KeyB', modifiers: [] },
+    } } } })
+  const input = { ...gesture, code: 'KeyA', meta: false, secondCode: 'KeyB' }
+  expect(registry.dispatch(input, context, vi.fn()).status).toBe('handled')
+  registry.release('KeyA')
+  expect(discharge).not.toHaveBeenCalled()
+  registry.release('KeyA')
+  registry.release('KeyB')
+  expect(discharge).toHaveBeenCalledOnce()
+  expect(registry.dispatch(input, context, vi.fn()).status).toBe('handled')
+  off()
+  // Disposal drops the held activation; the disposing owner settles its own action.
+  expect(discharge).toHaveBeenCalledOnce()
+  const releaseAll = vi.fn()
+  registry.register(command({ id: 'other.toggle' as ShortcutCommandId, defaults: {},
+    resolve: () => ({ status: 'handled', run: () => {}, release: releaseAll }) }))
+  registry.configure({ ...registry.config.getSnapshot(), revision: 'second' as never,
+    document: { schemaVersion: 2, profiles: { 'desktop:macos': {
+      'other.toggle': { code: 'KeyA', secondCode: 'KeyB', modifiers: [] },
+    } } } })
+  expect(registry.dispatch(input, context, vi.fn()).status).toBe('handled')
+  registry.releaseAll()
+  expect(releaseAll).toHaveBeenCalledOnce()
+  registry.releaseAll()
+  expect(releaseAll).toHaveBeenCalledOnce()
+})
+
+it('drops only the disposed command’s held activation', () => {
+  const registry = new ShortcutRegistry('desktop', 'macos')
+  const first = vi.fn(), second = vi.fn()
+  const offFirst = registry.register(command({ defaults: { 'desktop:macos': { code: 'KeyA', modifiers: ['primary'] } },
+    resolve: () => ({ status: 'handled', run: () => {}, release: first }) }))
+  registry.register(command({ id: 'other.toggle' as ShortcutCommandId,
+    defaults: { 'desktop:macos': { code: 'KeyB', modifiers: ['primary'] } },
+    resolve: () => ({ status: 'handled', run: () => {}, release: second }) }))
+  expect(registry.dispatch({ ...gesture, code: 'KeyA' }, context, vi.fn()).status).toBe('handled')
+  expect(registry.dispatch({ ...gesture, code: 'KeyB' }, context, vi.fn()).status).toBe('handled')
+  offFirst()
+  expect(first).not.toHaveBeenCalled()
+  expect(second).not.toHaveBeenCalled()
+  registry.release('KeyA')
+  expect(first).not.toHaveBeenCalled()
+  registry.release('KeyB')
+  expect(second).toHaveBeenCalledOnce()
+})

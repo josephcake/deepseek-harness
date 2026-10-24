@@ -294,7 +294,9 @@ it('routes embedded input once, follows rebindings, and guards native window clo
   expect(preventDefault).toHaveBeenCalledTimes(1)
   expect(f.contents.send).toHaveBeenLastCalledWith(DESKTOP_IPC.shortcutsInput, expect.objectContaining({ kind: 'iframe', revision: initial.revision, frameName: 'embedded', code: 'KeyW' }))
   f.contents.emit('before-input-event', { preventDefault }, { ...input, type: 'keyUp' })
-  expect(f.contents.send).toHaveBeenCalledTimes(1)
+  expect(f.contents.send).toHaveBeenCalledTimes(2)
+  expect(f.contents.send).toHaveBeenLastCalledWith(DESKTOP_IPC.shortcutsInput,
+    expect.objectContaining({ kind: 'keyboard', up: true, code: 'KeyW' }))
   const saved = await f.call<ShortcutSaveResult>(DESKTOP_IPC.shortcutsEdit,
     { type: 'set', id: 'page.close', binding: { code: 'KeyJ', modifiers: ['primary'] } }, initial.revision)
   expect(closeItem().accelerator).toBe('Command+J')
@@ -406,7 +408,9 @@ it.each(['macos', 'windows'] as const)('prioritizes %s custom editing bindings b
   expect(f.contents.send).toHaveBeenLastCalledWith(DESKTOP_IPC.shortcutsInput, expect.objectContaining({ kind: 'keyboard', code: 'KeyC' }))
   press({ type: 'keyUp' })
   expect(preventDefault).toHaveBeenCalledTimes(2)
-  expect(f.contents.send).toHaveBeenCalledOnce()
+  expect(f.contents.send).toHaveBeenCalledTimes(2)
+  expect(f.contents.send).toHaveBeenLastCalledWith(DESKTOP_IPC.shortcutsInput,
+    expect.objectContaining({ kind: 'keyboard', up: true, code: 'KeyC' }))
   Object.assign(f.contents, { focusedFrame: { name: 'embedded', parent: f.frame } })
   press()
   expect(f.contents.send).toHaveBeenLastCalledWith(DESKTOP_IPC.shortcutsInput, expect.objectContaining({ kind: 'iframe', frameName: 'embedded' }))
@@ -514,9 +518,37 @@ it.each(['C', 'V', 'Z'])('delivers Windows Edit %s to the editor and physical in
   deliver('keyDown')
   deliver('keyUp')
   expect(editorInput).toEqual([])
-  expect(f.contents.send).toHaveBeenCalledExactlyOnceWith(DESKTOP_IPC.shortcutsInput,
+  expect(f.contents.send).toHaveBeenCalledTimes(2)
+  expect(f.contents.send).toHaveBeenNthCalledWith(1, DESKTOP_IPC.shortcutsInput,
     expect.objectContaining({ kind: 'keyboard', code: `Key${keyCode}` }))
+  expect(f.contents.send).toHaveBeenNthCalledWith(2, DESKTOP_IPC.shortcutsInput,
+    expect.objectContaining({ kind: 'keyboard', up: true, code: `Key${keyCode}` }))
   expect(run).toHaveBeenCalledOnce()
+})
+
+it('forwards the scoped key release that ends a hold command', async () => {
+  const f = await fixture('macos')
+  const initial = await f.call<ShortcutConfigSnapshot>(DESKTOP_IPC.shortcutsGet, f.definitions)
+  const registry = new ShortcutRegistry('desktop', 'macos', initial)
+  const run = vi.fn(), release = vi.fn()
+  registry.register({ ...f.definitions[0]!, label: () => 'Hold sidebar', aliases: [], regions: ['page'], modals: [],
+    resolve: () => ({ status: 'handled', run, release }) })
+  let nativeInput: (input: DesktopShortcutInput) => void = () => {}
+  onTestFinished(installNativeKeyboard(window, {
+    closeWindow: vi.fn(), subscribe: (listener) => { nativeInput = listener; return () => {} },
+  }, registry, () => registry.config.getSnapshot()))
+  f.contents.send.mockImplementation((channel: string, input: DesktopShortcutInput) => {
+    if (channel === DESKTOP_IPC.shortcutsInput) nativeInput(input)
+  })
+  const press = (type: 'keyDown' | 'keyUp'): void => {
+    f.contents.emit('before-input-event', { preventDefault: vi.fn() }, { type, code: 'KeyB', key: 'b',
+      modifiers: ['meta'], meta: true, control: false, alt: false, shift: false, isAutoRepeat: false, isComposing: false })
+  }
+  f.contents.send.mockClear()
+  press('keyDown')
+  expect(run).toHaveBeenCalledOnce()
+  press('keyUp')
+  expect(release).toHaveBeenCalledOnce()
 })
 
 it('restores shortcut interception after native Edit delivery fails', async () => {

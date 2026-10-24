@@ -1,6 +1,7 @@
 /** Click-to-record toolbar activity; transcripts remain in the original Session draft. */
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { HostObservable, InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { ShortcutCatalogEntry } from '@deepseek-ai/dsh-client-shortcuts/client'
 import type { TokenSpan } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { TranscriptionRequest } from '@deepseek-ai/dsh-experimental-api-speech-to-text/types'
 import type { SpeechPreparationOptions, SpeechProviderId, SpeechSelection, SpeechSelectionPatch, Transcript } from '@deepseek-ai/dsh-experimental-speech-to-text/types'
@@ -11,6 +12,7 @@ import type { MicrophoneDevice } from './microphone-device.ts'
 import type { SpeechReadiness } from './readiness.ts'
 import { Waveform } from './Waveform.tsx'
 import { VoiceSetupDialog } from './VoiceSetupDialog.tsx'
+import type { VoiceActivationMode, VoiceActivationPreference, VoiceActuator } from './activation.ts'
 import { NS } from './locales.ts'
 import { Button, IconCloseOutlineRegular, IconStopFillRegular, IconMicrophoneOutlineRegular, StateDot, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import css from './VoiceInput.module.css'
@@ -27,6 +29,10 @@ export interface VoiceInputActions {
   prepare: (providerId: SpeechProviderId, options?: SpeechPreparationOptions) => Promise<void>
   cancelPreparation: (providerId: SpeechProviderId) => Promise<void>
   configure: (patch: SpeechSelectionPatch) => Promise<void>
+  /** Offer this mounted composer to the dictation shortcut. */
+  registerActuator: (actuator: VoiceActuator) => () => void
+  /** Persist the hold-to-talk or press-to-toggle trigger preference. */
+  selectActivation: (mode: VoiceActivationMode) => void
 }
 
 /** Entry-injected Host readiness and microphone operations. */
@@ -34,6 +40,9 @@ export interface VoiceInputInjected extends VoiceInputActions {
   hooks: {
     speechReadiness: HostObservable<SpeechReadiness>
     microphoneDevice: HostObservable<MicrophoneDevice>
+    voiceActivation: HostObservable<VoiceActivationPreference>
+    /** Effective rows of the application command catalog, including the dictation binding. */
+    shortcuts: HostObservable<readonly ShortcutCatalogEntry[]>
     /** Whether the Plugins page navigation service is present; the setup dialog offers the details only while it is. */
     pluginNavigation: HostObservable<boolean>
   }
@@ -61,10 +70,17 @@ async function disposeRecording(capture: Recording): Promise<void> {
   }
 }
 
+/** Read a late flag after an await; control-flow analysis would retain the pre-await assignment. */
+function stopWasRequested(ref: { readonly current: boolean }): boolean {
+  return ref.current
+}
+
 /** Render a compact microphone or an expanded capture, transcription, or retry row. */
 export function VoiceInput({ sessionId, inputActions, locked, onActiveChange,
-  createRecording, transcribe, openSettings, useSpeechReadiness, usePluginNavigation, t }: VoiceInputProps) {
+  createRecording, transcribe, openSettings, registerActuator, useSpeechReadiness, usePluginNavigation,
+  useShortcuts, t }: VoiceInputProps) {
   const readiness = useSpeechReadiness(value => value), catalog = readiness.catalog
+  const shortcutKeys = useShortcuts(rows => rows.find(row => row.id === 'voice.dictate')?.keys)
   const navigable = usePluginNavigation(present => present)
   const provider = catalog?.providers.find(item => item.id === catalog.selection.providerId)
   const usable = readiness.connected && (provider?.preparation.phase === 'ready' || provider?.preparation.phase === 'standby'
@@ -73,11 +89,15 @@ export function VoiceInput({ sessionId, inputActions, locked, onActiveChange,
   const [setupOpen, setSetupOpen] = useState(false)
   useEffect(() => { if (usable) setSetupOpen(false) }, [usable])
   const current = useRef<ActiveRecording>(), generation = useRef(0)
+  const stopRequested = useRef<boolean>(false)
+  const readyRef = useRef<boolean>(false)
+  readyRef.current = usable && !locked
   const expanded = phase !== 'idle'
   useLayoutEffect(() => { onActiveChange(expanded); return () => { onActiveChange(false) } }, [expanded, onActiveChange])
 
   const cancel = (): void => {
     generation.current++
+    stopRequested.current = false
     const active = current.current
     current.current = undefined
     if (active) { clearTimeout(active.timer); active.abort.abort(); void disposeRecording(active.capture) }
@@ -128,6 +148,7 @@ export function VoiceInput({ sessionId, inputActions, locked, onActiveChange,
   }
   const start = async (): Promise<void> => {
     if (!catalog || !usable || locked || current.current) return
+    stopRequested.current = false
     const run = ++generation.current
     const active: ActiveRecording = { capture: createRecording(), abort: new AbortController(),
       span: inputActions.captureInsertion(), selection: catalog.selection,
@@ -144,14 +165,32 @@ export function VoiceInput({ sessionId, inputActions, locked, onActiveChange,
       if (run !== generation.current || current.current !== active) return
       active.phase = 'recording'
       setPhase('recording')
+      // The shortcut released the key before microphone permission settled.
+      if (stopWasRequested(stopRequested)) { void finish(); return }
       active.timer = setTimeout(() => { void finish() }, active.maxDurationSeconds * 1000)
     } catch (failure) {
       await disposeRecording(active.capture)
       if (run === generation.current) { current.current = undefined; feedback(failureText(failure, t)) }
     }
   }
+  const stop = (): void => {
+    const active = current.current
+    if (!active) return
+    if (active.phase === 'requesting') { stopRequested.current = true; return }
+    if (active.phase === 'recording') void finish()
+  }
+  const startRef = useRef(start), stopRef = useRef(stop)
+  startRef.current = start
+  stopRef.current = stop
+  useEffect(() => registerActuator({
+    sessionId,
+    canStart: () => readyRef.current && current.current === undefined,
+    isActive: () => current.current?.phase === 'requesting' || current.current?.phase === 'recording',
+    start: () => { void startRef.current() },
+    stop: () => { stopRef.current() },
+  }), [registerActuator, sessionId])
   if (!expanded) return <>
-    <Tooltip label={t('dictate')} disabled={!usable} side="top" portal>
+    <Tooltip label={t('dictate')} shortcutKeys={shortcutKeys} disabled={!usable} side="top" portal>
       <span className={css.triggerAnchor}><Button className={css.trigger} size="sm" disabled={locked}
         aria-label={t(usable ? 'start' : 'setupPrompt.trigger')} aria-haspopup={usable ? undefined : 'dialog'}
         onMouseDown={(event) => { event.preventDefault() }}

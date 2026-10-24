@@ -28,7 +28,7 @@ export function detectEnvironment(document: Document, navigator: Navigator): {
  * @param native - native input owns configurable bindings; DOM delivery only feeds fixed actions.
  * @returns disposer releasing every listener, the modal observer, and cached nodes.
  */
-export function installKeyboard(window: Window, shortcuts: Pick<ShortcutRegistry, 'dispatch' | 'runtime' | 'platform'>,
+export function installKeyboard(window: Window, shortcuts: Pick<ShortcutRegistry, 'dispatch' | 'runtime' | 'platform' | 'release' | 'releaseAll'>,
   fixed?: (input: ShortcutFixedInput) => void, native = false): () => void {
   const document = window.document
   const composition = observeComposition(document)
@@ -37,7 +37,8 @@ export function installKeyboard(window: Window, shortcuts: Pick<ShortcutRegistry
   const reset = (): void => { fixed?.({ type: 'reset' }) }
   let deadKey = false
   let dialogs: NodeListOf<HTMLElement> | undefined
-  const blur = (): void => { deadKey = false; reset() }
+  const blur = (): void => { deadKey = false; reset(); shortcuts.releaseAll() }
+  const visibility = (): void => { if (document.hidden) shortcuts.releaseAll() }
   const containsModal = (node: Node): boolean => node instanceof Element
     && (node.matches(modalSelector) || node.querySelector(modalSelector) !== null)
   const changedModals = (records: MutationRecord[]): void => {
@@ -92,13 +93,16 @@ export function installKeyboard(window: Window, shortcuts: Pick<ShortcutRegistry
     shortcuts.dispatch({ ...gesture, composing: guarded || (isDead && !commandDeadKey),
       defaultPrevented: event.defaultPrevented }, context, consume)
   }
+  const keyup = (event: KeyboardEvent): void => { shortcuts.release(event.code) }
   document.addEventListener('compositionstart', reset, true)
   document.addEventListener('compositionend', reset, true)
   document.addEventListener('focusin', reset, true)
   document.addEventListener('pointerdown', reset, true)
   window.addEventListener('keydown', capture, true)
   window.addEventListener('keydown', keydown)
+  window.addEventListener('keyup', keyup)
   window.addEventListener('blur', blur)
+  document.addEventListener('visibilitychange', visibility)
   return () => {
     pending = false
     window.clearTimeout(pendingTimer)
@@ -111,6 +115,8 @@ export function installKeyboard(window: Window, shortcuts: Pick<ShortcutRegistry
     document.removeEventListener('pointerdown', reset, true)
     window.removeEventListener('keydown', capture, true)
     window.removeEventListener('keydown', keydown)
+    window.removeEventListener('keyup', keyup)
     window.removeEventListener('blur', blur)
+    document.removeEventListener('visibilitychange', visibility)
   }
 }

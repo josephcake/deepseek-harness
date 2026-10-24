@@ -165,3 +165,28 @@ it('checks the focused browser guest lease before dispatch and retains its embed
     off()
   }
 })
+
+it('ends a held command from a native release without dispatching it again', () => {
+  const registry = new ShortcutRegistry('desktop', 'macos')
+  const run = vi.fn(), release = vi.fn()
+  registry.register({ id: 'session.new' as ShortcutCommandId, label: () => 'New', aliases: [],
+    defaults: { 'desktop:macos': { code: 'KeyM', modifiers: ['primary', 'alt'] } },
+    regions: ['page'], modals: [], resolve: () => ({ status: 'handled', run, release }) })
+  let deliver: (input: DesktopShortcutInput) => void = () => {}
+  const dispatch = vi.spyOn(registry, 'dispatch')
+  const off = installNativeKeyboard(window, {
+    subscribe: (listener) => { deliver = listener; return () => {} }, closeWindow: vi.fn() }, registry,
+  () => registry.config.getSnapshot())
+  try {
+    const input: DesktopShortcutInput = { kind: 'keyboard', frameName: '', revision: registry.config.getSnapshot().revision,
+      code: 'KeyM', control: false, alt: true, shift: false, meta: true, repeat: false }
+    deliver(input)
+    expect(run).toHaveBeenCalledOnce()
+    deliver({ ...input, up: true })
+    expect(release).toHaveBeenCalledOnce()
+    expect(dispatch).toHaveBeenCalledOnce()
+    deliver(input)
+    deliver({ ...input, up: true, revision: 'older' as typeof input.revision })
+    expect(release).toHaveBeenCalledTimes(2)
+  } finally { off() }
+})

@@ -5,10 +5,12 @@ import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-tes
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import type { SpeechPreparationState, SpeechPreparationStep, SpeechProviderId } from '@deepseek-ai/dsh-experimental-speech-to-text/types'
+import type { ShortcutCatalogEntry, ShortcutCommandId } from '@deepseek-ai/dsh-client-shortcuts/client'
 import { afterEach, expect, it, vi } from 'vitest'
 import { PreparationCard, VoicePreparation } from '../src/client/PreparationCard.tsx'
 import type { VoiceInputProps } from '../src/client/VoiceInput.tsx'
 import type { SpeechReadiness } from '../src/client/readiness.ts'
+import type { VoiceActivationPreference } from '../src/client/activation.ts'
 import { Recording } from '../src/client/audio.ts'
 import { zh, en, ja, es, fr, de, ru, pt } from '../src/client/locales.ts'
 
@@ -120,6 +122,9 @@ it('persists settings and reports disconnection in the detail card', async () =>
   const props = { useSpeechReadiness: bindSnapshotSelector(store), configure, t,
     useMicrophoneDevice: bindSnapshotSelector(createSnapshotStore({ id: '', label: '' })),
     selectMicrophone: vi.fn(), createRecording: () => new Recording(() => {}),
+    useVoiceActivation: bindSnapshotSelector(createSnapshotStore({ mode: 'toggle' as const })),
+    useShortcuts: bindSnapshotSelector(createSnapshotStore([])),
+    selectActivation: vi.fn(),
     prepare: vi.fn(async () => {}), cancelPreparation: vi.fn(async () => {}) }
   const view = render(<VoicePreparation {...props} />)
   fireEvent.change(screen.getByLabelText(zh.provider), { target: { value: 'cloud' } })
@@ -223,4 +228,27 @@ it('gives each speech recognition language a distinct localized name', () => {
     expect(new Set(names).size).toBe(names.length)
   }
   expect(zh.fr).toBe('法语')
+})
+
+it('persists the trigger mode and shows the dictation shortcut', () => {
+  const store = createSnapshotStore<SpeechReadiness>({ connected: true, error: null, catalog: {
+    selection: { providerId: id, language: 'auto' }, maxAudioBytes: 100, maxDurationSeconds: 120,
+    providers: [{ id, name: 'SenseVoiceSmall', location: 'host-local', languages: ['auto', 'zh'], preparation: { phase: 'ready' } }],
+  } })
+  const activation = createSnapshotStore<VoiceActivationPreference>({ mode: 'toggle' })
+  const shortcuts = createSnapshotStore<readonly ShortcutCatalogEntry[]>([{
+    id: 'voice.dictate' as ShortcutCommandId, label: 'Dictate', aliases: [], keys: ['⌥', '⌘', 'M'],
+    aria: 'Alt+Meta+M', binding: null, modified: false, conflicts: [], issue: null,
+  }])
+  const selectActivation = vi.fn()
+  render(<VoicePreparation useSpeechReadiness={bindSnapshotSelector(store)} configure={vi.fn(async () => {})} t={t}
+    useMicrophoneDevice={bindSnapshotSelector(createSnapshotStore({ id: '', label: '' }))}
+    selectMicrophone={vi.fn()} createRecording={() => new Recording(() => {})}
+    useVoiceActivation={bindSnapshotSelector(activation)} useShortcuts={bindSnapshotSelector(shortcuts)}
+    selectActivation={selectActivation} prepare={vi.fn(async () => {})} cancelPreparation={vi.fn(async () => {})} />)
+  expect(screen.getByText('快捷键：⌥ ⌘ M')).toBeTruthy()
+  fireEvent.change(screen.getByLabelText(zh.activation), { target: { value: 'hold' } })
+  expect(selectActivation).toHaveBeenCalledWith('hold')
+  act(() => { activation.set({ mode: 'hold' }) })
+  expect(screen.getByLabelText<HTMLSelectElement>(zh.activation).value).toBe('hold')
 })

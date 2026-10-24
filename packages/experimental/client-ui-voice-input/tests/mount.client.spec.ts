@@ -5,9 +5,11 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { SpeechProviderId } from '@deepseek-ai/dsh-experimental-speech-to-text/types'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { RemoteError, type TypertRemoteContribution } from '@deepseek-ai/dsh-typert-protocol'
 import { expect, it, vi } from 'vitest'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { ShortcutCatalogEntry, ShortcutCommand } from '@deepseek-ai/dsh-client-shortcuts/client'
 import { mountVoiceInput, inject } from '../src/client/mount.ts'
 import { apply as hostApply } from '../src/index.ts'
 import { VoiceInput, type VoiceInputInjected } from '../src/client/VoiceInput.tsx'
@@ -31,6 +33,8 @@ function assertVoiceActions(value: Record<string, unknown>): asserts value is Re
   assert(typeof value.prepare === 'function')
   assert(typeof value.cancelPreparation === 'function')
   assert(typeof value.transcribe === 'function')
+  assert(typeof value.registerActuator === 'function')
+  assert(typeof value.selectActivation === 'function')
   assert(typeof value.hooks === 'object' && value.hooks !== null)
 }
 
@@ -51,6 +55,11 @@ async function fixture(fail = false, navigation = true) {
   const cancelPreparation = vi.fn(async () => ({ ok: true, value: {} }))
   const transcribe = vi.fn(async () => ({ ok: true, value: {} }))
   ctx.provide('remote.speech', { configure, prepare, cancelPreparation, transcribe })
+  const register = vi.fn<(command: ShortcutCommand) => () => void>(() => () => {})
+  const shortcutCatalog = createSnapshotStore<readonly ShortcutCatalogEntry[]>([])
+  ctx.provide('shortcuts', { register, catalog: shortcutCatalog } as never)
+  const sessions = createSnapshotStore<{ byId: Record<string, { id: SessionId; retainedBy: { mainView?: number } }> }>({ byId: {} })
+  ctx.provide('sessions', { list: sessions } as never)
   ctx.provide('locale', new LocaleRuntime(ctx))
   await ctx.plugin(SlotRegistry)
   ctx.slots.register({ name: 'root', children: {
@@ -60,7 +69,7 @@ async function fixture(fail = false, navigation = true) {
   } } as never,
   () => null)
   if (fail) vi.spyOn(ctx.slots, 'inject').mockImplementationOnce(() => { throw new Error('slot failed') })
-  return { ctx, unmount, openBundle, configure, prepare, cancelPreparation, transcribe }
+  return { ctx, unmount, openBundle, configure, prepare, cancelPreparation, transcribe, register, shortcutCatalog, sessions }
 }
 
 it('starts without the Plugins page navigation and follows its presence', async () => {
@@ -178,4 +187,81 @@ it('joins the same audio closure when cancellation overlaps Client plugin withdr
       try { await b.ctx.fiber.dispose() } finally { vi.unstubAllGlobals() }
     }
   }
+})
+
+it('registers the dictation shortcut and routes it to the current composer in either trigger mode', async () => {
+  hostApply()
+  const b = await fixture()
+  try {
+    const fiber = b.ctx.plugin({ inject: [...inject], apply: ctx => mountVoiceInput(ctx, REMOTE) })
+    await fiber
+    const command = b.register.mock.calls[0]![0]
+    expect(command.id).toBe('voice.dictate')
+    expect(command.label()).toBe('Dictate')
+    expect(command.defaults).toMatchObject({
+      'desktop:macos': { code: 'KeyV', modifiers: ['primary', 'alt'] },
+      'web:windows': { code: 'KeyV', modifiers: ['primary', 'alt'] },
+    })
+    expect(command.defaults['desktop:linux']).toBeUndefined()
+    expect(command.defaults['web:linux']).toBeUndefined()
+    const context = { region: 'page' as const, modal: null, target: null }
+    expect(command.resolve(context).status).toBe('blocked')
+    const start = vi.fn(), stop = vi.fn()
+    let active = false
+    const entry = b.ctx.slots.entries('conversation.input.activity').find(item => item.component === VoiceInput)!
+    const actions = entry.inject!()
+    assertVoiceActions(actions)
+    const dispose = actions.registerActuator({ sessionId: 'one' as SessionId, canStart: () => !active,
+      isActive: () => active, start: () => { active = true; start() }, stop: () => { active = false; stop() } })
+    const toggle = command.resolve(context)
+    if (toggle.status !== 'handled') throw new Error('dictation shortcut is unavailable')
+    toggle.run()
+    expect(start).toHaveBeenCalledOnce()
+    const stopToggle = command.resolve(context)
+    if (stopToggle.status !== 'handled') throw new Error('dictation shortcut is unavailable')
+    stopToggle.run()
+    expect(stop).toHaveBeenCalledOnce()
+    actions.selectActivation('hold')
+    expect(actions.hooks.voiceActivation.getSnapshot().mode).toBe('hold')
+    const hold = command.resolve(context)
+    if (hold.status !== 'handled' || hold.release === undefined) throw new Error('hold shortcut is unavailable')
+    hold.run()
+    expect(command.resolve(context).status).toBe('blocked')
+    hold.release()
+    expect(start).toHaveBeenCalledTimes(2)
+    expect(stop).toHaveBeenCalledTimes(2)
+    dispose()
+    expect(command.resolve(context).status).toBe('blocked')
+  } finally { await b.ctx.fiber.dispose() }
+})
+
+it('targets the composer retained by the main view before the newest mounted composer', async () => {
+  hostApply()
+  const b = await fixture()
+  try {
+    const fiber = b.ctx.plugin({ inject: [...inject], apply: ctx => mountVoiceInput(ctx, REMOTE) })
+    await fiber
+    const command = b.register.mock.calls[0]![0]
+    const entry = b.ctx.slots.entries('conversation.input.activity').find(item => item.component === VoiceInput)!
+    const actions = entry.inject!()
+    assertVoiceActions(actions)
+    const startOne = vi.fn(), startTwo = vi.fn()
+    actions.registerActuator({ sessionId: 'one' as SessionId, canStart: () => true, isActive: () => false,
+      start: startOne, stop: vi.fn() })
+    actions.registerActuator({ sessionId: 'two' as SessionId, canStart: () => true, isActive: () => false,
+      start: startTwo, stop: vi.fn() })
+    b.sessions.set({ byId: {
+      one: { id: 'one' as SessionId, retainedBy: {} },
+      two: { id: 'two' as SessionId, retainedBy: { mainView: 1 } },
+    } })
+    const resolution = command.resolve({ region: 'page', modal: null, target: null })
+    if (resolution.status !== 'handled') throw new Error('dictation shortcut is unavailable')
+    resolution.run()
+    expect(startTwo).toHaveBeenCalledOnce()
+    expect(startOne).not.toHaveBeenCalled()
+    actions.registerActuator({ sessionId: 'three' as SessionId, canStart: () => false, isActive: () => false,
+      start: vi.fn(), stop: vi.fn() })
+    b.sessions.set({ byId: { three: { id: 'three' as SessionId, retainedBy: { mainView: 1 } } } })
+    expect(command.resolve({ region: 'page', modal: null, target: null }).status).toBe('blocked')
+  } finally { await b.ctx.fiber.dispose() }
 })

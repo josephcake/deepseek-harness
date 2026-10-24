@@ -102,6 +102,14 @@ export const zh = {
   unavailable: '当前浏览器不支持录音，请使用支持麦克风的浏览器。',
   permission: '麦克风权限未开启，请在浏览器和系统设置中允许访问。',
   tooLarge: '录音超过服务限制，请缩短录音后重试。',
+  activation: '触发方式',
+  activationToggle: '按一次开始，再按一次停止',
+  activationHold: '按住说话',
+  activationHelp: '快捷键仅在语音输入插件启用时生效；可在“设置 → 键盘快捷键”中修改。',
+  shortcutKeys: '快捷键：{keys}',
+  shortcutUnbound: '尚未设置快捷键',
+  'shortcut.unavailable': '语音输入当前不可用。',
+  'shortcut.busy': '语音输入正忙，请稍后再试。',
 } as const
 
 /** Keys accepted by the voice input translator. */
@@ -206,6 +214,14 @@ export const en: Record<VoiceKey, string> = {
   unavailable: 'This browser cannot record audio. Use a browser with microphone support.',
   permission: 'Microphone access is disabled. Allow it in browser and system settings.',
   tooLarge: 'The recording exceeds the service limit. Try a shorter recording.',
+  activation: 'Activation',
+  activationToggle: 'Press to start and stop',
+  activationHold: 'Hold to talk',
+  activationHelp: 'The shortcut works while voice input is enabled. Change it in Settings → Keyboard shortcuts.',
+  shortcutKeys: 'Shortcut: {keys}',
+  shortcutUnbound: 'No shortcut assigned',
+  'shortcut.unavailable': 'Voice input is not available right now.',
+  'shortcut.busy': 'Voice input is busy. Try again in a moment.',
 }
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -326,6 +342,14 @@ export const ja = {
   'unavailable': 'このブラウザは音声を録音できません。マイクに対応したブラウザを使用してください。',
   'permission': 'マイクへのアクセスが無効になっています。ブラウザとシステムの設定で許可してください。',
   'tooLarge': '録音がサービスの上限を超えています。短い録音をお試しください。',
+  activation: '起動方法',
+  activationToggle: '1回押して開始、もう1回で停止',
+  activationHold: '押している間だけ録音',
+  activationHelp: 'ショートカットは音声入力プラグインが有効な間だけ機能します。「設定 → キーボードショートカット」で変更できます。',
+  shortcutKeys: 'ショートカット：{keys}',
+  shortcutUnbound: 'ショートカット未設定',
+  'shortcut.unavailable': '現在、音声入力を利用できません。',
+  'shortcut.busy': '音声入力は処理中です。しばらくしてから再試行してください。',
 } satisfies Record<keyof typeof en, string>
 
 /** Spanish dictionary, checked against the English keys. */
@@ -427,6 +451,14 @@ export const es = {
   unavailable: 'Este navegador no puede grabar audio. Utilice un navegador compatible con micrófono.',
   permission: 'El acceso al micrófono está deshabilitado. Permitirlo en la configuración del navegador y del sistema.',
   tooLarge: 'La grabación excede el límite del servicio. Pruebe con una grabación más corta.',
+  activation: 'Activación',
+  activationToggle: 'Pulsar para iniciar y detener',
+  activationHold: 'Mantener pulsado para hablar',
+  activationHelp: 'El atajo funciona mientras la entrada de voz esté activada. Cámbialo en Configuración → Atajos de teclado.',
+  shortcutKeys: 'Atajo: {keys}',
+  shortcutUnbound: 'Sin atajo asignado',
+  'shortcut.unavailable': 'La entrada de voz no está disponible ahora.',
+  'shortcut.busy': 'La entrada de voz está ocupada. Inténtalo de nuevo en un momento.',
 } satisfies Record<keyof typeof en, string>
 
 /** French dictionary, checked against the English keys. */
@@ -528,6 +560,14 @@ export const fr = {
   unavailable: 'Ce navigateur ne peut pas enregistrer de son. Utilisez un navigateur prenant en charge le microphone.',
   permission: "L'accès au microphone est désactivé. Autorisez-le dans les paramètres du navigateur et du système.",
   tooLarge: "L'enregistrement dépasse la limite du service. Essayez un enregistrement plus court.",
+  activation: 'Activation',
+  activationToggle: 'Appuyer pour démarrer et arrêter',
+  activationHold: 'Maintenir pour parler',
+  activationHelp: 'Le raccourci fonctionne tant que la saisie vocale est activée. Modifiez-le dans Paramètres → Raccourcis clavier.',
+  shortcutKeys: 'Raccourci : {keys}',
+  shortcutUnbound: 'Aucun raccourci attribué',
+  'shortcut.unavailable': "La saisie vocale n'est pas disponible pour le moment.",
+  'shortcut.busy': 'La saisie vocale est occupée. Réessayez dans un instant.',
 } satisfies Record<keyof typeof en, string>
 
 /** German dictionary, checked against the English keys. */
@@ -629,6 +669,14 @@ export const de = {
   unavailable: 'Dieser Browser kann keine Audiodaten aufzeichnen. Verwenden Sie einen Browser mit Mikrofonunterstützung.',
   permission: 'Der Mikrofonzugriff ist deaktiviert. Erlauben Sie es in den Browser- und Systemeinstellungen.',
   tooLarge: 'Die Aufnahme überschreitet das Dienstlimit. Versuchen Sie es mit einer kürzeren Aufnahme.',
+  activation: 'Auslösung',
+  activationToggle: 'Drücken zum Starten und Stoppen',
+  activationHold: 'Zum Sprechen gedrückt halten',
+  activationHelp: 'Die Tastenkombination gilt, solange die Spracheingabe aktiviert ist. Ändern Sie sie unter Einstellungen → Tastenkürzel.',
+  shortcutKeys: 'Tastenkürzel: {keys}',
+  shortcutUnbound: 'Kein Tastenkürzel zugewiesen',
+  'shortcut.unavailable': 'Spracheingabe ist derzeit nicht verfügbar.',
+  'shortcut.busy': 'Spracheingabe ist beschäftigt. Versuchen Sie es gleich noch einmal.',
 } satisfies Record<keyof typeof en, string>
 
 /** Russian dictionary, checked against the English keys. */
@@ -730,6 +778,14 @@ export const ru = {
   unavailable: 'Этот браузер не может записывать звук. Используйте браузер с поддержкой микрофона.',
   permission: 'Доступ к микрофону отключен. Разрешите это в настройках браузера и системы.',
   tooLarge: 'Запись превышает лимит обслуживания. Попробуйте более короткую запись.',
+  activation: 'Активация',
+  activationToggle: 'Нажать для начала и остановки',
+  activationHold: 'Удерживайте, чтобы говорить',
+  activationHelp: 'Сочетание работает, пока голосовой ввод включён. Измените его в разделе «Настройки → Сочетания клавиш».',
+  shortcutKeys: 'Сочетание: {keys}',
+  shortcutUnbound: 'Сочетание не назначено',
+  'shortcut.unavailable': 'Голосовой ввод сейчас недоступен.',
+  'shortcut.busy': 'Голосовой ввод занят. Повторите попытку чуть позже.',
 } satisfies Record<keyof typeof en, string>
 
 /** Portuguese dictionary, checked against the English keys. */
@@ -831,4 +887,12 @@ export const pt = {
   unavailable: 'Este navegador não pode gravar áudio. Use um navegador com suporte para microfone.',
   permission: 'O acesso ao microfone está desativado. Permita nas configurações do navegador e do sistema.',
   tooLarge: 'A gravação excede o limite de serviço. Experimente uma gravação mais curta.',
+  activation: 'Ativação',
+  activationToggle: 'Pressione para iniciar e parar',
+  activationHold: 'Mantenha pressionado para falar',
+  activationHelp: 'O atalho funciona enquanto a entrada de voz estiver ativada. Altere-o em Configurações → Atalhos de teclado.',
+  shortcutKeys: 'Atalho: {keys}',
+  shortcutUnbound: 'Nenhum atalho atribuído',
+  'shortcut.unavailable': 'A entrada de voz não está disponível no momento.',
+  'shortcut.busy': 'A entrada de voz está ocupada. Tente novamente em instantes.',
 } satisfies Record<keyof typeof en, string>

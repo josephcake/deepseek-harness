@@ -13,7 +13,15 @@ export interface ShortcutContext {
   readonly target: Element | null
 }
 /** A resolved action captures its target; failures remain the owner's responsibility. */
-export type ShortcutResolution = { status: 'handled'; run(): void }
+export type ShortcutResolution = {
+  status: 'handled'
+  run(): void
+  /**
+   * End the action when the activating key, or the last key of the activating chord, is released.
+   * Hold-to-talk commands use it; omitting it leaves the action in its run state.
+   */
+  release?(this: void): void
+}
   | { status: 'blocked'; reason: string }
   | { status: 'pass' }
 /** One command's labels, defaults, input ownership, and target resolver. */
@@ -99,6 +107,15 @@ export interface Shortcuts {
    * @returns disposer releasing the handler.
    */
   observeFixedInput(listener: (input: ShortcutFixedInput) => void): () => void
+  /**
+   * End the command whose activating key was released; unknown keys are ignored.
+   * @param code - physical key code from the keyboard adapter.
+   */
+  release(code: string): void
+  /**
+   * End every held command, for example when the window loses focus or the page hides.
+   */
+  releaseAll(): void
   /**
    * Describe a candidate using the device's physical-key and reservation rules; invalid codes throw.
    * @param binding - candidate combination, or null for an unbound command.
